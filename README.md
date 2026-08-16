@@ -20,9 +20,8 @@
   <a href="#-overview">Overview</a> ·
   <a href="#-features">Features</a> ·
   <a href="#-architecture">Architecture</a> ·
-  <a href="#-getting-started">Getting Started</a> ·
   <a href="#-api">API</a> ·
-  <a href="#-players">Players</a>
+  <a href="#-getting-started">Getting Started</a>
 </p>
 
 </div>
@@ -45,18 +44,18 @@ ByteCast keeps large file transfers and long-running video processing outside th
 
 ## 🚀 Features
 
-|     | Feature                | Description                                                   |
-| --- | ---------------------- | ------------------------------------------------------------- |
-| 📤  | **Direct Uploads**     | Upload videos directly to MinIO using temporary POST policies |
-| 🗄️ | **Object Storage**     | Store source videos and generated HLS content in MinIO        |
-| ⚙️  | **FFmpeg Processing**  | Transcode videos using the FFmpeg command-line interface      |
-| 🔄  | **Batch Jobs**         | Process videos asynchronously using background jobs           |
-| 🎚️ | **Multi-Quality HLS**  | Generate multiple resolutions and bitrates                    |
-| 📑  | **HLS Playlists**      | Generate master and quality-specific playlists                |
-| 🧩  | **HLS Segments**       | Serve generated video segments                                |
-| 📡  | **Adaptive Streaming** | Support switching between available quality variants          |
-| 🎛️ | **Quality Selection**  | Allow the player to select a specific quality                 |
-| 🎬  | **Web Players**        | Includes range, HLS and multi-quality player examples         |
+|     | Feature                 | Description                                                              |
+| --- | ----------------------- | ------------------------------------------------------------------------ |
+| 📤  | **Direct Uploads**      | Upload videos directly to MinIO using temporary pre-signed POST policies |
+| 🗄️ | **Object Storage**      | Store source videos and generated HLS content in MinIO                   |
+| ⚙️  | **FFmpeg Processing**   | Transcode videos using the FFmpeg command-line interface                 |
+| 🔄  | **Batch Jobs**          | Process videos asynchronously using background jobs                      |
+| 🎚️ | **Multi-Quality HLS**   | Generate multiple resolutions and bitrates                               |
+| 📑  | **HLS Master Playlist** | Expose a master playlist containing available qualities                  |
+| 🧩  | **HLS Segments**        | Serve generated video segments                                           |
+| 📡  | **Adaptive Streaming**  | Support switching between available quality variants                     |
+| 🎛️ | **Quality Selection**   | Allow the player to select a specific quality                            |
+| 🎬  | **Web Players**         | Includes range, HLS and multi-quality player examples                    |
 
 ---
 
@@ -127,56 +126,63 @@ ByteCast separates **uploading, storage, processing, and streaming** into differ
 
 ---
 
-## 📤 Direct Upload with POST Policies
+## 📤 Direct Upload with Pre-Signed POST Policies
 
-ByteCast uses **MinIO POST policies** to allow clients to upload videos directly to object storage.
+ByteCast uses **MinIO pre-signed POST policies** to allow clients to upload videos directly to object storage.
 
-Instead of sending large video files through the ByteCast API, the client first requests a temporary upload policy.
+Instead of sending a large video file through the ByteCast API, the client first requests an upload policy.
 
-ByteCast generates the policy and returns the required fields to the client.
+The API returns:
 
-The client then performs a multipart `POST` directly to MinIO.
+* The MinIO upload URL
+* The form fields required by the POST policy
+
+The client then performs a `multipart/form-data` POST directly to MinIO.
 
 ```text
 Client
   │
-  │  Request upload policy
+  │ GET /api/videos/{videoId}/upload
   ▼
 ByteCast API
   │
-  │  Generate temporary POST policy
+  │ Generate POST policy
   ▼
 Client
   │
-  │  Multipart POST
+  │ multipart/form-data POST
   ▼
 MinIO
+  │
+  │ Video stored
+  ▼
+Object Storage
 ```
 
 ### Upload Flow
 
 ```text
-1. Client requests an upload policy
-                │
-                ▼
-2. ByteCast generates a temporary POST policy
-                │
-                ▼
-3. Client receives the policy fields
-                │
-                ▼
-4. Client uploads the video directly to MinIO
-                │
-                ▼
-5. MinIO stores the source video
-                │
-                ▼
-6. Client starts the processing job
+1. Create / identify a video
+              │
+              ▼
+2. Request upload policy
+              │
+              ▼
+3. ByteCast generates temporary POST policy
+              │
+              ▼
+4. Client receives URL + formData
+              │
+              ▼
+5. Client uploads directly to MinIO
+              │
+              ▼
+6. Start HLS processing job
 ```
 
-### Why POST Policies?
+This approach keeps large file uploads away from the application server.
 
-Direct uploads provide several advantages:
+### Benefits
 
 * 🚀 Large files bypass the application server
 * 📈 Reduces network and memory pressure on the API
@@ -191,18 +197,18 @@ Direct uploads provide several advantages:
 
 ByteCast uses **MinIO** as its blob/object storage layer.
 
-MinIO stores both the original source videos and the generated HLS content.
+MinIO stores the original source videos as well as the generated HLS content.
 
-A typical storage layout can look like:
+A typical output structure looks like:
 
 ```text
 videos/
-├── source/
-│   └── {video-id}/
-│       └── video.mp4
-│
-└── hls/
-    └── {video-id}/
+└── {videoId}/
+    │
+    ├── source/
+    │   └── video.mp4
+    │
+    └── hls/
         ├── master.m3u8
         │
         ├── 1080p/
@@ -224,24 +230,27 @@ videos/
             └── ...
 ```
 
-Keeping media files in object storage allows the application layer to remain lightweight and makes it easier to scale the API independently from media storage.
+Keeping media files in object storage allows the application layer to remain lightweight and makes it possible to scale the API independently from media storage.
 
 ---
 
 # 🔄 Batch Video Processing
 
-Video transcoding is a long-running operation, so ByteCast handles it through a **background batch job**.
+Video transcoding is a long-running operation, so ByteCast handles it through a **background processing job**.
 
-The API can create a processing job without keeping the HTTP request open while FFmpeg runs.
+The processing endpoint starts the job and returns a `VideoProcessingJob` containing its current status.
 
 ```text
 Create Job
     │
     ▼
-Download Source
+PENDING
     │
     ▼
-Create Temporary Workspace
+RUNNING
+    │
+    ▼
+Download Source
     │
     ▼
 Run FFmpeg
@@ -253,18 +262,30 @@ Generate HLS Variants
 Upload HLS Output
     │
     ▼
-Update Job Status
+COMPLETED
 ```
 
-A job can track its lifecycle from creation through completion or failure.
+A processing job contains:
 
-This architecture provides a foundation for:
+| Field          | Description                             |
+| -------------- | --------------------------------------- |
+| `id`           | Unique job identifier                   |
+| `videoId`      | Video being processed                   |
+| `status`       | Current processing status               |
+| `createdAt`    | Job creation timestamp                  |
+| `startedAt`    | Processing start timestamp              |
+| `finishedAt`   | Processing completion timestamp         |
+| `errorMessage` | Error information when processing fails |
 
-* Multiple concurrent video jobs
-* Retry mechanisms
-* Job monitoring
-* Distributed processing workers
-* Long-running video operations
+Current job states include:
+
+```text
+PENDING
+RUNNING
+COMPLETED
+```
+
+This architecture keeps long-running FFmpeg operations outside the HTTP request lifecycle and provides a foundation for future job monitoring, retries, and distributed workers.
 
 ---
 
@@ -274,7 +295,7 @@ ByteCast uses the **FFmpeg command-line interface** for video transcoding.
 
 The source video is converted into multiple HLS variants.
 
-Each variant can define its own:
+Each variant can have its own:
 
 * Resolution
 * Video bitrate
@@ -301,7 +322,7 @@ For example:
           segments     segments     segments
 ```
 
-The generated variants are then combined through an HLS master playlist.
+The generated variants are combined through an HLS master playlist.
 
 ---
 
@@ -329,9 +350,9 @@ For example:
 360p   ── 800 kbps
 ```
 
-An HLS-compatible player can use the master playlist to discover the available variants.
+An HLS-compatible player starts from the master playlist and discovers the available variants.
 
-The player can then select an appropriate quality and, when supported, switch between variants as network conditions change.
+The player can then select a specific quality or switch between variants depending on its playback strategy and network conditions.
 
 This provides the foundation for **adaptive bitrate streaming**.
 
@@ -369,9 +390,148 @@ The `master.m3u8` file acts as the entry point for playback.
 
 ---
 
+# 🔌 API
+
+Base path:
+
+```text
+/api/videos
+```
+
+## 📤 Generate Upload Policy
+
+Generate a temporary MinIO POST policy for uploading a video.
+
+```http
+GET /api/videos/{videoId}/upload
+```
+
+### Response
+
+```json
+{
+  "url": "http://localhost:9000/...",
+  "formData": {
+    "key": "...",
+    "policy": "...",
+    "x-amz-algorithm": "...",
+    "x-amz-credential": "...",
+    "x-amz-date": "...",
+    "x-amz-signature": "..."
+  }
+}
+```
+
+The client uses the returned `url` and `formData` to perform the actual multipart upload directly to MinIO.
+
+---
+
+## ⚙️ Start HLS Processing
+
+Start the HLS generation job for a video.
+
+```http
+POST /api/videos/{videoId}/HlsGenerationJob
+Content-Type: application/json
+```
+
+The endpoint returns a `VideoProcessingJob`.
+
+Example:
+
+```json
+{
+  "id": "job-123",
+  "videoId": "video-123",
+  "status": "PENDING",
+  "createdAt": "2026-08-16T18:00:00Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "errorMessage": null
+}
+```
+
+---
+
+## 📑 Get HLS Master Playlist
+
+Returns the master HLS playlist.
+
+```http
+GET /api/videos/{videoId}/hls/master.m3u8
+```
+
+Content type:
+
+```text
+application/vnd.apple.mpegurl
+```
+
+The master playlist references the available quality variants.
+
+---
+
+## 🎚️ Get Quality Segment
+
+Returns a segment from a specific quality.
+
+```http
+GET /api/videos/{videoId}/hls/{quality}/{segment}
+```
+
+Example:
+
+```http
+GET /api/videos/123/hls/720p/segment_001.ts
+```
+
+Content type:
+
+```text
+video/mp2t
+```
+
+---
+
+## 🧩 Get Segment
+
+A segment can also be requested without explicitly specifying the quality.
+
+```http
+GET /api/videos/{videoId}/hls/{segment}
+```
+
+Content type:
+
+```text
+video/mp2t
+```
+
+---
+
+## ▶️ Stream Original Video
+
+ByteCast also supports standard HTTP video streaming.
+
+```http
+GET /api/videos/{videoId}/stream
+```
+
+The endpoint accepts the HTTP `Range` header, allowing clients to request portions of the original video.
+
+Example:
+
+```http
+Range: bytes=0-1048575
+```
+
+This allows standard HTML5 video playback and seeking.
+
+---
+
 # 🎬 Players
 
-ByteCast includes lightweight HTML players for testing the streaming pipeline.
+The repository includes lightweight HTML players for testing the streaming pipeline.
 
 ### 📦 Range Player
 
@@ -383,61 +543,9 @@ Demonstrates HLS playback using **HLS.js**.
 
 ### 🎚️ Multi-Quality Player
 
-Demonstrates playback through the HLS master playlist and provides quality selection.
+Demonstrates playback using the HLS master playlist with quality selection.
 
-These players make it possible to test the backend without building a separate frontend application.
-
----
-
-# 🔌 API
-
-ByteCast exposes REST endpoints for managing uploads, processing jobs, and serving HLS content.
-
-## Upload
-
-The client first requests a temporary MinIO POST policy.
-
-```http
-POST /...
-```
-
-The response contains the information required for the client to upload the video directly to MinIO.
-
-## Processing
-
-After the upload is complete, a processing job can be started.
-
-```http
-POST /...
-```
-
-The batch worker then retrieves the source video and starts the FFmpeg conversion.
-
-## HLS Master Playlist
-
-Returns the master HLS playlist.
-
-```http
-GET /...
-```
-
-## Quality Playlist
-
-Returns the playlist for a specific quality.
-
-```http
-GET /...
-```
-
-## HLS Segment
-
-Returns an individual HLS media segment.
-
-```http
-GET /...
-```
-
-> The exact endpoint paths and parameters are defined by the REST resources in the project.
+These examples make it possible to test the backend without building a separate frontend application.
 
 ---
 
@@ -533,10 +641,10 @@ ByteCast currently focuses on the core video processing and streaming pipeline.
 
 Potential future improvements include:
 
-* [ ] Improved job monitoring
-* [ ] Processing progress reporting
+* [ ] Job monitoring and progress reporting
+* [ ] Job retry mechanisms
 * [ ] More encoding profiles
-* [ ] Automatic quality selection improvements
+* [ ] Improved automatic quality selection
 * [ ] Authentication & authorization
 * [ ] Video metadata management
 * [ ] Upload progress tracking
