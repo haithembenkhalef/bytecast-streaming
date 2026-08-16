@@ -1,8 +1,5 @@
 package io.bytecast.streaming.job;
 
-import io.bytecast.streaming.job.HlsGenerationResult;
-import io.bytecast.streaming.job.HlsOutput;
-import io.bytecast.streaming.job.VideoProcessor;
 import io.bytecast.streaming.service.FFmpegService;
 import io.bytecast.streaming.storage.VideoStorage;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -14,6 +11,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
@@ -48,9 +46,14 @@ public class HlsGenerationProcessor implements VideoProcessor<HlsGenerationResul
             // Upload playlist and segments
             String playlistObjectKey = storage.uploadHls(videoId, workingDirectory);
 
+            List<String> segmentKeys = output.segments().stream()
+                    .flatMap(rendition -> rendition.segments().stream())
+                    .map(Path::toString)
+                    .toList();
+
             return new HlsGenerationResult(
                     playlistObjectKey,
-                    output.segments().stream().map(Path::toString).toList(),
+                    segmentKeys,
                     output.segments().size());
 
         } catch (IOException e) {

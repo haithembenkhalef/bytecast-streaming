@@ -1,19 +1,16 @@
 package io.bytecast.streaming.service;
 
-import io.bytecast.streaming.config.Config;
 import io.bytecast.streaming.exception.StreamingErrorCode;
 import io.bytecast.streaming.exception.StreamingException;
+import io.bytecast.streaming.storage.HlsFile;
 import io.bytecast.streaming.storage.VideoData;
 import io.bytecast.streaming.storage.VideoMetadata;
 import io.bytecast.streaming.storage.VideoStorage;
 import io.bytecast.streaming.storage.VideoStream;
-import io.minio.GetObjectArgs;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.core.StreamingOutput;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.InputStream;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -27,6 +24,16 @@ public class VideoStreamService {
 
     @Inject
     VideoStorage videoStorage;
+
+    public HlsFile getMasterM3u8(String videoId) throws Exception {
+        VideoMetadata metadata = videoStorage.getMetadataHlsMaster(videoId);
+
+        long fileSize = metadata.size();
+        String contentType = metadata.contentType();
+        log.debug("MinIO stat | videoId={}, fileSize={}, contentType={}", videoId, fileSize, contentType);
+
+        return videoStorage.downloadMasterM3u8(videoId);
+    }
 
     public VideoData getSegment(String videoId, String rangeHeader) throws Exception {
         if (rangeHeader == null) {

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js"></script>
+</head>
+<body>
+<video id="video" controls width="1280" height="720" autoplay></video>
+
+<script>
+    const video = document.getElementById('video');
+
+    // Same-origin relative URL — works because this file is served
+    // by the same Quarkus app as the API, so no CORS involved.
+    const src = "/api/videos/123/hls/master.m3u8";
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({ debug: true });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log("Manifest parsed OK");
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        console.error("HLS ERROR:", data.type, data.details, "fatal:", data.fatal);
+      });
+
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src;
+    } else {
+      console.error("HLS not supported in this browser");
+    }
+</script>
+</body>
+</html>

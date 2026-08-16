@@ -4,8 +4,6 @@ import io.bytecast.streaming.config.Config;
 import io.bytecast.streaming.exception.StreamingErrorCode;
 import io.bytecast.streaming.exception.StreamingException;
 import io.minio.GetObjectArgs;
-import io.minio.GetPresignedObjectUrlArgs;
-import io.minio.Http;
 import io.minio.MinioClient;
 import io.minio.PostPolicy;
 import io.minio.StatObjectArgs;
@@ -18,13 +16,12 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.core.StreamingOutput;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZonedDateTime;
-import java.util.Formatter;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
@@ -36,6 +33,8 @@ public class VideoStorage {
 
     private static final String VIDEO_DIRECTORY = "videos";
     private static final String ORIGINAL = "original";
+    private static final String HLS_DIRECTORY = "hls";
+    private static final String MASTER_M3U8 = "master.m3u8";
 
     @Inject
     MinioClient minioClient;
@@ -71,10 +70,11 @@ public class VideoStorage {
 
     public VideoStream downloadSegment(String videoId, long start, long length) {
         String bucket = config.bucket();
+        String object = buildVideoObjectKey(videoId);
         AtomicLong transferred = new AtomicLong();
         GetObjectArgs args = GetObjectArgs.builder()
                 .bucket(bucket)
-                .object(videoId)
+                .object(object)
                 .offset(start)
                 .length(length)
                 .build();
@@ -94,11 +94,17 @@ public class VideoStorage {
         return new VideoStream(stream, transferred.get());
     }
 
+    public HlsFile downloadMasterM3u8(String videoId) throws Exception {
+        String object = buildHlsVideoObjectKey(videoId) + "/" + MASTER_M3U8;
+        InputStream download = this.download(object);
+        return new HlsFile(download);
+    }
+
     public String uploadHls(String videoId, Path hlsDirectory) throws Exception {
 
         String prefix = "videos/" + videoId + "/hls/";
 
-        try (Stream<Path> files = Files.list(hlsDirectory)) {
+        try (Stream<Path> files = Files.walk(hlsDirectory)) {
 
             for (Path file : files.toList()) {
 
@@ -106,7 +112,11 @@ public class VideoStorage {
                     continue;
                 }
 
-                String objectKey = prefix + file.getFileName();
+                Path relativePath = hlsDirectory.relativize(file);
+
+                String objectKey = prefix + relativePath
+                        .toString()
+                        .replace(File.separatorChar, '/');
 
                 minioClient.uploadObject(
                         UploadObjectArgs.builder()
@@ -121,9 +131,26 @@ public class VideoStorage {
 
     @CacheResult(cacheName = "video-metadata")
     public VideoMetadata getMetadata(String videoId) throws Exception {
+        String object = buildVideoObjectKey(videoId);
         try {
             StatObjectResponse stat = minioClient.statObject(
-                    StatObjectArgs.builder().bucket(config.bucket()).object(videoId).build()
+                    StatObjectArgs.builder().bucket(config.bucket()).object(object).build()
+            );
+            return new VideoMetadata(stat.size(), stat.contentType());
+        } catch (ErrorResponseException e) {
+            if ("NoSuchKey".equals(e.errorResponse().code())) {
+                throw new StreamingException(StreamingErrorCode.VIDEO_NOT_FOUND, videoId);
+            }
+            throw e;
+        }
+    }
+
+    @CacheResult(cacheName = "video-metadata-master.m3u8")
+    public VideoMetadata getMetadataHlsMaster(String videoId) throws Exception {
+        String object = buildHlsVideoObjectKey(videoId) + "/" + MASTER_M3U8;
+        try {
+            StatObjectResponse stat = minioClient.statObject(
+                    StatObjectArgs.builder().bucket(config.bucket()).object(object).build()
             );
             return new VideoMetadata(stat.size(), stat.contentType());
         } catch (ErrorResponseException e) {
@@ -136,5 +163,19 @@ public class VideoStorage {
 
     public static String buildVideoObjectKey(String videoId) {
         return String.format("%s/%s/%s", VIDEO_DIRECTORY, videoId, ORIGINAL);
+    }
+
+    public static String buildHlsVideoObjectKey(String videoId) {
+        return String.format("%s/%s/%s", VIDEO_DIRECTORY, videoId, HLS_DIRECTORY);
+    }
+
+    public HlsFile getHlsObject(String videoId, String quality, String seg) throws Exception {
+        String object = quality == null
+                ? String.format("%s/%s", buildHlsVideoObjectKey(videoId), seg)
+                : String.format("%s/%s/%s", buildHlsVideoObjectKey(videoId), quality, seg);
+
+        InputStream download = this.download(object);
+
+        return new HlsFile(download);
     }
 }
