@@ -641,14 +641,14 @@ ByteCast currently focuses on the core video processing and streaming pipeline.
 
 Potential future improvements include:
 
-* [ ] Job monitoring and progress reporting
+* [x] Job monitoring and progress reporting
 * [ ] Job retry mechanisms
 * [ ] More encoding profiles
 * [ ] Improved automatic quality selection
 * [ ] Authentication & authorization
 * [ ] Video metadata management
 * [ ] Upload progress tracking
-* [ ] Distributed processing workers
+* [x] Distributed processing workers
 * [ ] Scalable media delivery
 
 ---
