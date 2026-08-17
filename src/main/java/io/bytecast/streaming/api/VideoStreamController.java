@@ -117,4 +117,13 @@ public class VideoStreamController {
 
         return RestResponse.accepted(job);
     }
+
+    @GET
+    @Path("/{videoId}/HlsGenerationJob/{jobId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public RestResponse<VideoProcessingJob> getJobStatus(@PathParam("videoId") String videoId,
+                                                         @PathParam("jobId") String jobId) {
+
+        return RestResponse.ok(processingService.getJob(jobId));
+    }
 }

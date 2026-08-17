@@ -1,6 +1,7 @@
     package io.bytecast.streaming.exception;
 
 public enum StreamingErrorCode {
+    JOB_NOT_FOUND("JOB.NOT_FOUND", 404, "Job does not exist"),
     VIDEO_NOT_FOUND("VID.NOT_FOUND", 404, "Video does not exist in storage"),
     BUCKET_NOT_FOUND("BKT.NOT_FOUND", 404, "Storage bucket does not exist"),
     RANGE_UNSATISFIABLE("RNG.UNSATISFIABLE", 416, "Requested byte range exceeds file bounds"),

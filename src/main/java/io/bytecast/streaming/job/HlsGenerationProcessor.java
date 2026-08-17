@@ -20,7 +20,6 @@ public class HlsGenerationProcessor implements VideoProcessor<HlsGenerationResul
     public static String TEMP_VIDEO_NAME = "video";
     public static String TEMP_HLS_DIRECTORY = "hls-%s";
 
-
     @Inject
     VideoStorage storage;
 
