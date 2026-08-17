@@ -22,6 +22,9 @@ import java.util.Map;
 @Slf4j
 public class VideoStreamController {
 
+    static final String APPLICATION_MPEGURL = "application/vnd.apple.mpegurl";
+    static final String VIDEO_MP2T = "video/mp2t";
+
     @Inject
     VideoStreamService videoStreamService;
 
@@ -74,9 +77,7 @@ public class VideoStreamController {
 
     @GET
     @Path("/{videoId}/hls/{quality}/{segment}")
-    @Produces("video/mp2t")
     public Response getSegment(@PathParam("videoId") String videoId, @PathParam("quality") String quality, @PathParam("segment") String segment) throws Exception {
-        //TODO: Add Quality path
         log.info("Stream segment file request received | videoId={}, quality={}, segment={}", videoId, quality, segment);
         HlsFile hlsObject = videoStorage.getHlsObject(videoId, quality, segment);
         StreamingOutput out = output -> {
@@ -84,14 +85,15 @@ public class VideoStreamController {
                 in.transferTo(output);
             }
         };
-        return Response.ok(out).build();
+        String contentType = segment.endsWith(".m3u8")
+                ? APPLICATION_MPEGURL
+                : VIDEO_MP2T;
+        return Response.ok(out).type(contentType).build();
     }
 
     @GET
     @Path("/{videoId}/hls/{segment}")
-    @Produces("video/mp2t")
     public Response getSegment(@PathParam("videoId") String videoId, @PathParam("segment") String segment) throws Exception {
-        //TODO: Add Quality path
         log.info("Stream segment file request received | videoId={}, segment={}", videoId, segment);
         HlsFile hlsObject = videoStorage.getHlsObject(videoId, null, segment);
         StreamingOutput out = output -> {
@@ -99,7 +101,10 @@ public class VideoStreamController {
                 in.transferTo(output);
             }
         };
-        return Response.ok(out).build();
+        String contentType = segment.endsWith(".m3u8")
+                ? APPLICATION_MPEGURL
+                : VIDEO_MP2T;
+        return Response.ok(out).type(contentType).build();
     }
 
     @POST
