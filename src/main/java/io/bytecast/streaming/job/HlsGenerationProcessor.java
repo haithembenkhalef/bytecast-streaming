@@ -17,6 +17,10 @@ import java.util.Map;
 @ApplicationScoped
 public class HlsGenerationProcessor implements VideoProcessor<HlsGenerationResult> {
 
+    public static String TEMP_VIDEO_NAME = "video";
+    public static String TEMP_HLS_DIRECTORY = "hls-%s";
+
+
     @Inject
     VideoStorage storage;
 
@@ -31,9 +35,9 @@ public class HlsGenerationProcessor implements VideoProcessor<HlsGenerationResul
         String objectName = VideoStorage.buildVideoObjectKey(videoId);
 
         try {
-            workingDirectory = Files.createTempDirectory("hls-" + videoId);
+            workingDirectory = Files.createTempDirectory(String.format(TEMP_HLS_DIRECTORY, videoId));
 
-            Path inputFile = workingDirectory.resolve("video.mp4");
+            Path inputFile = workingDirectory.resolve(TEMP_VIDEO_NAME);
 
             // Download original video
             try (InputStream in = storage.download(objectName)) {

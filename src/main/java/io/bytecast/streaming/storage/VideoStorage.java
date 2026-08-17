@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import static io.bytecast.streaming.exception.StreamingErrorCode.STORAGE_ERROR_UNKNOWN;
+import static io.bytecast.streaming.job.HlsGenerationProcessor.TEMP_VIDEO_NAME;
 
 @ApplicationScoped
 @Slf4j
@@ -102,15 +103,14 @@ public class VideoStorage {
 
     public String uploadHls(String videoId, Path hlsDirectory) throws Exception {
 
-        String prefix = "videos/" + videoId + "/hls/";
+        String prefix = buildHlsVideoObjectKey(videoId);
 
         try (Stream<Path> files = Files.walk(hlsDirectory)) {
 
             for (Path file : files.toList()) {
 
-                if (!Files.isRegularFile(file)) {
+                if (shouldSkip(file))
                     continue;
-                }
 
                 Path relativePath = hlsDirectory.relativize(file);
 
@@ -127,6 +127,10 @@ public class VideoStorage {
             }
         }
         return prefix;
+    }
+
+    static boolean shouldSkip(Path file) {
+        return !Files.isRegularFile(file) || file.getFileName().toString().endsWith(TEMP_VIDEO_NAME);
     }
 
     @CacheResult(cacheName = "video-metadata")
